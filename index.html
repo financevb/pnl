@@ -338,6 +338,18 @@ const LEGACY_제품매출='제품매출';
 const REVENUE_FIELDS=['상품매출','제품매출','수수료매출','광고매출','이자수익','외화수익'];
 
 function n(v){return +v||0;}
+/* Supabase는 한 번에 최대 1,000행만 반환 — 끝까지 페이지 단위로 전부 가져온다 (누락 방지) */
+async function fetchAll(makeQuery){
+  const PAGE=1000;let from=0,all=[];
+  for(;;){
+    const {data,error}=await makeQuery().range(from,from+PAGE-1);
+    if(error){console.error('fetchAll:',error.message);break;}
+    all=all.concat(data||[]);
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  return all;
+}
 function rawNum(el){
   if(!el)return 0;
   return +String(el.value).replace(/,/g,'').trim()||0;
@@ -400,6 +412,9 @@ function calcCost(d, txTotals, txRevenue){
     이자수익:{수기:n(d.이자수익),tx:n(txRev['이자수익'])},
     외화수익:{수기:n(d.외화수익),tx:n(txRev['외화수익'])},
   };
+  // 위 6개 계정명과 다른 매출세금계산서 계정(예: 대변계정 없음→'기타매출')도 총매출에서 누락되지 않게 합산
+  const 기타tx=Object.keys(txRev).reduce((s,k)=>s+(REVENUE_FIELDS.includes(k)?0:n(txRev[k])),0);
+  revBreak.기타매출={수기:0,tx:기타tx};
   const rev=Object.values(revBreak).reduce((s,v)=>s+v.수기+v.tx,0);
   const profit=rev-cost-비용반영금액;
   return{rev,cost,매출원가,비용반영금액,profit,급여계,사대보험계,신용카드계,커머스계,tx,revBreak,당기매입계산};
@@ -426,8 +441,7 @@ async function loadAll(){
 }
 
 async function getTxTotals(year,month){
-  const {data}=await sb.from('transactions').select('*').eq('year',year).eq('month',month);
-  const rows=data||[];
+  const rows=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('id'));
   const totals={pg:0,운반비:0,매입세금계산서:0,매입계산서:0,당기매입:0};
   const details={pg:{},운반비:{},매입세금계산서:{},매입계산서:{},미반영:{}};
   const revenue={}; // 매출세금계산서 대변계정별 합계 (공급가액) — 비용 계산과 완전히 분리
@@ -647,7 +661,7 @@ async function loadTx(){
   const month=+document.getElementById('tmo').value;
   const el=document.getElementById('tx-content');
   el.innerHTML='<div class="loading">불러오는 중...</div>';
-  const {data}=await sb.from('transactions').select('*').eq('year',year).eq('month',month).order('파일종류').order('차변계정');
+  const data=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('파일종류').order('차변계정').order('id'));
   if(!data||!data.length){el.innerHTML='<div class="empty">해당 월의 거래내역이 없어요.</div>';return;}
   const byFile={};
   data.forEach(r=>{if(!byFile[r.파일종류])byFile[r.파일종류]=[];byFile[r.파일종류].push(r);});
@@ -698,8 +712,7 @@ async function openTxDetail(kind,keyEnc){
   const key=keyEnc?decodeURIComponent(keyEnc):'';
   const {year,month}=dashView;
   showDtl(`${year}.${month}월 상세`,'<div class="loading">불러오는 중...</div>');
-  const {data}=await sb.from('transactions').select('*').eq('year',year).eq('month',month);
-  const all=data||[];
+  const all=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('id'));
   const rows=all.filter(r=>{
     if(r.파일종류==='잡이익')return false;
     if(r.파일종류==='매출세금계산서')return kind==='revtx'&&(!key||r.차변계정===key);
@@ -737,8 +750,7 @@ function openManualDtl(group){
 async function openJabDtl(){
   const {year,month}=dashView;
   showDtl(`${year}.${month}월 · 잡이익 상세`,'<div class="loading">불러오는 중...</div>');
-  const {data}=await sb.from('transactions').select('*').eq('year',year).eq('month',month).eq('파일종류','잡이익').order('id');
-  const rows=data||[];
+  const rows=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).eq('파일종류','잡이익').order('id'));
   const cur=records.find(r=>r.year===year&&r.month===month);
   const manual=n(cur&&cur.잡이익);
   const sum=rows.reduce((s,r)=>s+n(r.공급가액),0);
@@ -779,7 +791,7 @@ async function delJabRow(id){
 }
 async function syncJabTotal(){
   const {year,month}=dashView;
-  const {data}=await sb.from('transactions').select('공급가액').eq('year',year).eq('month',month).eq('파일종류','잡이익');
+  const data=await fetchAll(()=>sb.from('transactions').select('공급가액').eq('year',year).eq('month',month).eq('파일종류','잡이익').order('id'));
   const sum=(data||[]).reduce((s,r)=>s+n(r.공급가액),0);
   await sb.from('pl_records').update({잡이익:sum,updated_at:new Date().toISOString()}).eq('year',year).eq('month',month);
   const cur=records.find(r=>r.year===year&&r.month===month);
@@ -791,8 +803,7 @@ async function renderCompare(){
   const el=document.getElementById('compare');
   if(!records.length){el.innerHTML='<div class="empty">저장된 데이터가 없어요.</div>';return;}
   el.innerHTML='<div class="loading">월별 데이터 계산 중...</div>';
-  const {data}=await sb.from('transactions').select('파일종류,차변계정,공급가액,손익미반영,year,month');
-  const all=data||[];
+  const all=await fetchAll(()=>sb.from('transactions').select('파일종류,차변계정,공급가액,손익미반영,year,month').order('id'));
   const byM={};
   all.forEach(r=>{
     if(r.파일종류==='잡이익')return;
@@ -812,12 +823,13 @@ async function renderCompare(){
     const s=calcCost(r,b.totals,b.revenue);
     const rv=k2=>s.revBreak[k2].수기+s.revBreak[k2].tx;
     return {label:r.year+'.'+r.month+'월',vals:{
-      '총 매출':s.rev,'상품매출':rv('상품매출'),'제품매출':rv('제품매출'),'수수료매출':rv('수수료매출'),'광고매출':rv('광고매출'),'이자/외화수익':rv('이자수익')+rv('외화수익'),'잡이익':n(r.잡이익),
+      '총 매출':s.rev,'상품매출':rv('상품매출'),'제품매출':rv('제품매출'),'수수료매출':rv('수수료매출'),'광고매출':rv('광고매출'),'이자/외화수익':rv('이자수익')+rv('외화수익'),'기타매출':rv('기타매출'),'잡이익':n(r.잡이익),
       '총 비용':s.cost,'급여':s.급여계,'4대보험':s.사대보험계,'신용카드수수료':s.신용카드계,'커머스마케팅비':s.커머스계,'PG수수료':b.totals.pg,'운반비':b.totals.운반비,'매입세금계산서':b.totals.매입세금계산서,'매입계산서':b.totals.매입계산서,'외화이체':n(r.외화이체),'기타지출':n(r.기타지출),
       '매출원가':s.매출원가,'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
     }};
   });
-  const items=Object.keys(cols[0].vals);
+  let items=Object.keys(cols[0].vals);
+  if(cols.every(c=>!c.vals['기타매출']))items=items.filter(i=>i!=='기타매출'); /* 전월 전부 0이면 행 숨김 */
   const groupRows=new Set(['총 매출','총 비용','매출원가','당월 손익','이익률(%)']);
   const f0=v=>Math.round(v).toLocaleString('ko-KR');
   function cell(item,i){
@@ -1011,6 +1023,11 @@ async function renderDash(){
           const pct=s.rev>0?(total/s.rev*100).toFixed(1)+'%':'-';
           const bar=s.rev>0?Math.min(100,total/s.rev*100):0;
           return`<tr><td>이자/외화수익</td><td class="amt">${fmt(total)}</td><td class="amt">${pct}<div class="bar-wrap"><div class="bar" style="width:${bar}%"></div></div></td></tr>`;
+        })()}
+        ${(()=>{
+          const b=s.revBreak.기타매출;if(!b||b.tx<=0)return '';
+          const pct=s.rev>0?(b.tx/s.rev*100).toFixed(1)+'%':'-';
+          return`<tr class="clk" onclick="openTxDetail('revtx','')" title="클릭하면 매출세금계산서 상세가 열려요"><td>기타 매출 <span style="color:#ff9f0a;">(미분류 계정 — 확인 필요)</span></td><td class="amt">${fmt(b.tx)}</td><td class="amt">${pct}</td></tr>`;
         })()}
         <tr class="total-row"><td>합계</td><td class="amt">${fmt(s.rev)}</td><td class="amt">100%</td></tr>
       </table>
