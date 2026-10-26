@@ -176,10 +176,10 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
       <div class="sh">💰 매출 (수기 입력분 — 매출세금계산서 업로드분은 현황에서 자동 합산)</div>
       <div class="grid2">
         <div>
-          <div class="ig"><label>상품매출 - 유팡 (수기)</label><input type="text" inputmode="numeric" id="f-유팡" placeholder="0" oninput="formatNumberInput(this)"></div>
-          <div class="ig"><label>상품매출 - 락앤락 (수기)</label><input type="text" inputmode="numeric" id="f-락앤락" placeholder="0" oninput="formatNumberInput(this)"></div>
-          <div class="ig"><label>상품매출 - 아이코닉스 (수기)</label><input type="text" inputmode="numeric" id="f-아이코닉스" placeholder="0" oninput="formatNumberInput(this)"></div>
-          <div class="ig"><label>상품매출 - 고퀄 (수기)</label><input type="text" inputmode="numeric" id="f-고퀄" placeholder="0" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>상품매출 - 유팡 (수기, VAT포함 금액 입력 → 자동 ÷1.1)</label><input type="text" inputmode="numeric" id="f-유팡" placeholder="0" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>상품매출 - 락앤락 (수기, VAT포함 금액 입력 → 자동 ÷1.1)</label><input type="text" inputmode="numeric" id="f-락앤락" placeholder="0" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>상품매출 - 아이코닉스 (수기, VAT포함 금액 입력 → 자동 ÷1.1)</label><input type="text" inputmode="numeric" id="f-아이코닉스" placeholder="0" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>상품매출 - 고퀄 (수기, VAT포함 금액 입력 → 자동 ÷1.1)</label><input type="text" inputmode="numeric" id="f-고퀄" placeholder="0" oninput="formatNumberInput(this)"></div>
           <div class="ig"><label>제품매출 - PB매출 합계 (수기)</label><input type="text" inputmode="numeric" id="f-PB매출sum" placeholder="0" oninput="formatNumberInput(this)"></div>
           <div class="ig"><label>제품매출 - 쿠팡로켓 PB매출 (수기)</label><input type="text" inputmode="numeric" id="f-쿠팡로켓PB매출" placeholder="0" oninput="formatNumberInput(this)"></div>
           <div class="ig"><label>제품매출 - 맘가이드 PB매출 (수기)</label><input type="text" inputmode="numeric" id="f-맘가이드PB매출" placeholder="0" oninput="formatNumberInput(this)"></div>
@@ -397,7 +397,8 @@ function calcCost(d, txTotals, txRevenue){
   // 매출 = 수기 입력분 + 매출세금계산서 업로드분 (계정별로 합산)
   // 상품매출 수기분 = 유팡+락앤락+아이코닉스+고퀄. 넷 다 0인데 예전 '상품매출' 값이 있으면(마이그레이션 전 데이터) 그걸 대신 사용
   const 브랜드입력있음=n(d.유팡)!==0||n(d.락앤락)!==0||n(d.아이코닉스)!==0||n(d.고퀄)!==0;
-  let 상품매출수기=브랜드입력있음?(n(d.유팡)+n(d.락앤락)+n(d.아이코닉스)+n(d.고퀄)):0;
+  // 직매입 상품매출 입력값(유팡·락앤락·아이코닉스·고퀄)은 VAT 포함 금액이라 ÷1.1 해서 공급가액으로 집계 (위하고·매출장 상품매출 = 공급가액)
+  let 상품매출수기=브랜드입력있음?(n(d.유팡)+n(d.락앤락)+n(d.아이코닉스)+n(d.고퀄))/1.1:0;
   if(!브랜드입력있음&&n(d.상품매출)>0)상품매출수기=n(d.상품매출);
   // 브랜드팀 매출시트 = (PB매출합계 - 쿠팡로켓PB매출 - 맘가이드PB매출) / 1.1 (부가세 제외)
   const PB매출sum=n(d['PB매출sum']),쿠팡로켓PB매출=n(d.쿠팡로켓PB매출),맘가이드PB매출=n(d.맘가이드PB매출);
@@ -995,10 +996,10 @@ async function renderDash(){
             if(!브랜드입력있음&&n(cur.상품매출)>0){
               sub+=`<tr class="sub-row"><td>└ 상품매출 (마이그레이션 전 데이터)</td><td class="amt">${fmt(n(cur.상품매출))}</td><td></td></tr>`;
             } else {
-              sub+=`<tr class="sub-row"><td>└ 유팡</td><td class="amt">${fmt(유팡)}</td><td></td></tr>`;
-              sub+=`<tr class="sub-row"><td>└ 락앤락</td><td class="amt">${fmt(락앤락)}</td><td></td></tr>`;
-              sub+=`<tr class="sub-row"><td>└ 아이코닉스</td><td class="amt">${fmt(아이코닉스)}</td><td></td></tr>`;
-              sub+=`<tr class="sub-row"><td>└ 고퀄</td><td class="amt">${fmt(고퀄)}</td><td></td></tr>`;
+              sub+=`<tr class="sub-row"><td>└ 유팡 (공급가액, 입력 ${fmt(유팡)} ÷1.1)</td><td class="amt">${fmt(유팡/1.1)}</td><td></td></tr>`;
+              sub+=`<tr class="sub-row"><td>└ 락앤락 (공급가액, 입력 ${fmt(락앤락)} ÷1.1)</td><td class="amt">${fmt(락앤락/1.1)}</td><td></td></tr>`;
+              sub+=`<tr class="sub-row"><td>└ 아이코닉스 (공급가액, 입력 ${fmt(아이코닉스)} ÷1.1)</td><td class="amt">${fmt(아이코닉스/1.1)}</td><td></td></tr>`;
+              sub+=`<tr class="sub-row"><td>└ 고퀄 (공급가액, 입력 ${fmt(고퀄)} ÷1.1)</td><td class="amt">${fmt(고퀄/1.1)}</td><td></td></tr>`;
             }
             if(b.tx>0)sub+=`<tr class="sub-row clk" onclick="openTxDetail('revtx','${_e(k)}')" title="클릭하면 상세 내역이 열려요"><td>└ 매출세금계산서</td><td class="amt">${fmt(b.tx)}</td><td></td></tr>`;
           } else if(k==='제품매출'){
