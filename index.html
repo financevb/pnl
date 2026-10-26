@@ -481,7 +481,7 @@ async function loadAll(){
     if(error)throw error;
     records=data||[];
     await loadAdj();
-    setStatus(true,`연결됨 · ${records.length}개월 저장됨`);
+    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261026-합계열`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
     records=[];
