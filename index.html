@@ -94,6 +94,8 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
 .cmp th:first-child{text-align:left;}
 .cmp td:first-child,.cmp th:first-child{position:sticky;left:0;background:#fff;z-index:1;box-shadow:2px 0 0 #f2f2f7;}
 .cmp .grp td{background:#fafafa;font-weight:700;}
+.cmp .tot{background:#eef4ff;font-weight:700;}
+.cmp .grp td.tot{background:#e3edff;}
 .cmp .grp td:first-child{background:#fafafa;}
 .cmp .amt{font-variant-numeric:tabular-nums;}
 .chg{display:block;font-size:10.5px;color:#b0b0b5;margin-top:2px;}
@@ -251,6 +253,21 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
 
       <div class="auto-notice">📎 매입세금계산서, 매입계산서, PG수수료, 운반비는 <b>위하고 업로드</b> 탭에서 자동 반영됩니다. 매출세금계산서를 올리면 위에 입력한 수기 매출과 <b>더해져서</b> 현황 화면의 "전체 매출"에 표시됩니다 (여기 입력값은 그대로 유지돼요).</div>
 
+      <div class="sh">📒 회계 조정 (가결산 맞춤 · 선택 입력 · 위에서 고른 연/월에 저장)</div>
+      <div class="auto-notice">회계법인 가결산에는 있지만 거래·수기 입력에는 없는 항목이에요. <b>비워두면 기존 손익 그대로</b>입니다. 상품매출원가는 <b>상품 기말재고를 입력한 달</b>에 [상품 기초재고 + 그 사이 상품 매입(손익미반영 '상품' 거래) − 기말재고]로 자동 계산돼요(분기 말에만 입력해도 됨). 정부지원금·선급비용 증가분·기타는 입력한 금액만큼 손익에 더해집니다.</div>
+      <div class="grid2">
+        <div>
+          <div class="ig"><label>상품 기초재고 (첫 달 또는 새로 시작할 때만)</label><input type="text" inputmode="numeric" id="a-상품기초재고" placeholder="비움" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>상품 기말재고 (입력한 달에 상품매출원가 계산)</label><input type="text" inputmode="numeric" id="a-상품기말재고" placeholder="비움" oninput="formatNumberInput(this)"></div>
+        </div>
+        <div>
+          <div class="ig"><label>정부지원금 (판관비 차감 · 손익 +)</label><input type="text" inputmode="numeric" id="a-정부지원금" placeholder="비움" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>선급비용 증가분 (비용 차감 · 손익 +, 감소면 −)</label><input type="text" inputmode="numeric" id="a-선급비용" placeholder="비움" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>기타 조정 (손익 ±)</label><input type="text" inputmode="numeric" id="a-기타조정" placeholder="비움" oninput="formatNumberInput(this)"></div>
+        </div>
+      </div>
+      <div class="btn-row"><button class="btn" onclick="saveAdj()">📒 회계 조정만 저장</button></div>
+
       <div class="btn-row">
         <button class="btn" onclick="clearForm()">초기화</button>
         <button class="btn primary" onclick="saveMonth()">☁️ 저장하기</button>
@@ -325,6 +342,35 @@ let _curTxTotals={당기매입:0};
 const PG거래처=['네이버파이낸셜','토스페이먼츠','카카오페이']; /* KG이니시스·비바리퍼블리카는 PG 분류 안 함 (정채영 확인 2026-10-14) */
 const 손익미반영계정=['상품','부가세대급금'];
 const 운반비계정=['운반비'];
+
+/* ===== 회계 조정 (가결산 맞춤) =====
+   transactions 에 파일종류='조정' 행으로 저장: 상품기초재고·상품기말재고·정부지원금·선급비용·기타조정 (월별 선택 입력)
+   - 상품매출원가 = 기초재고 + (직전 기말재고 입력월 이후~해당월 '상품' 손익미반영 매입 합) − 기말재고  (기말재고를 입력한 달에 계산)
+   - 정부지원금(판관비 차감)·선급비용(비용 차감)·기타조정은 입력 금액만큼 손익에 가산
+   입력이 없으면 기존 손익과 100% 동일 */
+let ADJ={};
+function computeAdj(adjRows,purchRows){
+  const key=(y,m)=>y+'-'+m;const adj={},purch={};
+  adjRows.forEach(r=>{const k=key(r.year,r.month);adj[k]=adj[k]||{};adj[k][r.차변계정]=(adj[k][r.차변계정]||0)+(+r.공급가액||0);});
+  purchRows.forEach(r=>{const k=key(r.year,r.month);purch[k]=(purch[k]||0)+(+r.공급가액||0);});
+  const keys=[...new Set([...Object.keys(adj),...Object.keys(purch)])].map(k=>k.split('-').map(Number)).sort((p,q)=>p[0]-q[0]||p[1]-q[1]);
+  let lastEnd=null,acc=0;
+  keys.forEach(([y,m])=>{
+    const k=key(y,m);const a=adj[k]||{};acc+=purch[k]||0;
+    if('상품기말재고' in a){
+      const begin=('상품기초재고' in a)?a.상품기초재고:(lastEnd==null?0:lastEnd);
+      a.상품원가=begin+acc-a.상품기말재고;acc=0;lastEnd=a.상품기말재고;adj[k]=a;
+    } else if('상품기초재고' in a && lastEnd==null){lastEnd=a.상품기초재고;adj[k]=a;}
+  });
+  return adj;
+}
+async function loadAdj(){
+  try{
+    const adjRows=await fetchAll(()=>sb.from('transactions').select('year,month,차변계정,공급가액').eq('파일종류','조정').order('id'));
+    const purchRows=await fetchAll(()=>sb.from('transactions').select('year,month,공급가액').eq('차변계정','상품').eq('손익미반영',true).order('id'));
+    ADJ=computeAdj(adjRows,purchRows);
+  }catch(e){ADJ={};}
+}
 
 const FIELDS=['유팡','락앤락','아이코닉스','고퀄','PB매출sum','쿠팡로켓PB매출','맘가이드PB매출','수수료매출','광고매출','이자수익','외화수익','잡이익',
   '상용직급여','외주인건비','퇴직급여','건강장기','국민연금','고용보험','산재보험',
@@ -417,8 +463,10 @@ function calcCost(d, txTotals, txRevenue){
   const 기타tx=Object.keys(txRev).reduce((s,k)=>s+(REVENUE_FIELDS.includes(k)?0:n(txRev[k])),0);
   revBreak.기타매출={수기:0,tx:기타tx};
   const rev=Object.values(revBreak).reduce((s,v)=>s+v.수기+v.tx,0);
-  const profit=rev-cost-비용반영금액;
-  return{rev,cost,매출원가,비용반영금액,profit,급여계,사대보험계,신용카드계,커머스계,tx,revBreak,당기매입계산};
+  const adjRow=(typeof ADJ!=='undefined'&&ADJ[d.year+'-'+d.month])||{};
+  const adjNet=-n(adjRow.상품원가)+n(adjRow.정부지원금)+n(adjRow.선급비용)+n(adjRow.기타조정);
+  const profit=rev-cost-비용반영금액+adjNet;
+  return{rev,cost,매출원가,비용반영금액,profit,급여계,사대보험계,신용카드계,커머스계,tx,revBreak,당기매입계산,adj:adjRow,adjNet};
 }
 
 function setStatus(ok,msg){
@@ -432,6 +480,7 @@ async function loadAll(){
     const {data,error}=await sb.from('pl_records').select('*').order('year').order('month');
     if(error)throw error;
     records=data||[];
+    await loadAdj();
     setStatus(true,`연결됨 · ${records.length}개월 저장됨`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
@@ -447,7 +496,7 @@ async function getTxTotals(year,month){
   const details={pg:{},운반비:{},매입세금계산서:{},매입계산서:{},미반영:{}};
   const revenue={}; // 매출세금계산서 대변계정별 합계 (공급가액) — 비용 계산과 완전히 분리
   rows.forEach(r=>{
-    if(r.파일종류==='잡이익')return; // 잡이익 상세는 비용/매출 계산에서 제외 (합계는 pl_records.잡이익에 반영됨)
+    if(r.파일종류==='잡이익'||r.파일종류==='조정')return; // 잡이익 상세·회계조정은 비용/매출 거래 집계에서 제외
     // 매출세금계산서는 매출 데이터이므로 비용 계산에서 제외하고, 별도로 매출 합계에만 반영
     if(r.파일종류==='매출세금계산서'){
       const acct=r.차변계정;
@@ -715,7 +764,7 @@ async function openTxDetail(kind,keyEnc){
   showDtl(`${year}.${month}월 상세`,'<div class="loading">불러오는 중...</div>');
   const all=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('id'));
   const rows=all.filter(r=>{
-    if(r.파일종류==='잡이익')return false;
+    if(r.파일종류==='잡이익'||r.파일종류==='조정')return false;
     if(r.파일종류==='매출세금계산서')return kind==='revtx'&&(!key||r.차변계정===key);
     if(r.손익미반영)return kind==='미반영'&&(!key||r.차변계정===key);
     if(r.차변계정==='(판)PG수수료[자동분류]')return kind==='pg'&&(!key||r.거래처===key);
@@ -807,7 +856,7 @@ async function renderCompare(){
   const all=await fetchAll(()=>sb.from('transactions').select('파일종류,차변계정,공급가액,손익미반영,year,month').order('id'));
   const byM={};
   all.forEach(r=>{
-    if(r.파일종류==='잡이익')return;
+    if(r.파일종류==='잡이익'||r.파일종류==='조정')return;
     const k=r.year+'-'+r.month;
     const b=byM[k]=byM[k]||{totals:{pg:0,운반비:0,매입세금계산서:0,매입계산서:0,당기매입:0},revenue:{}};
     if(r.파일종류==='매출세금계산서'){b.revenue[r.차변계정]=(b.revenue[r.차변계정]||0)+n(r.공급가액);return;}
@@ -826,11 +875,15 @@ async function renderCompare(){
     return {label:r.year+'.'+r.month+'월',vals:{
       '총 매출':s.rev,'상품매출':rv('상품매출'),'제품매출':rv('제품매출'),'수수료매출':rv('수수료매출'),'광고매출':rv('광고매출'),'이자/외화수익':rv('이자수익')+rv('외화수익'),'기타매출':rv('기타매출'),'잡이익':n(r.잡이익),
       '총 비용':s.cost,'급여':s.급여계,'4대보험':s.사대보험계,'신용카드수수료':s.신용카드계,'커머스마케팅비':s.커머스계,'PG수수료':b.totals.pg,'운반비':b.totals.운반비,'매입세금계산서':b.totals.매입세금계산서,'매입계산서':b.totals.매입계산서,'외화이체':n(r.외화이체),'기타지출':n(r.기타지출),
-      '매출원가':s.매출원가,'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
+      '매출원가':s.매출원가,'(조정)상품매출원가':n(s.adj.상품원가),'(조정)정부지원금 차감':n(s.adj.정부지원금),'(조정)선급비용·기타':n(s.adj.선급비용)+n(s.adj.기타조정),'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
     }};
   });
   let items=Object.keys(cols[0].vals);
   if(cols.every(c=>!c.vals['기타매출']))items=items.filter(i=>i!=='기타매출'); /* 전월 전부 0이면 행 숨김 */
+  items=items.filter(i=>!i.startsWith('(조정)')||cols.some(c=>c.vals[i])); /* 조정 입력이 없으면 행 숨김 */
+  /* 최종 합계 열: 월별 값을 모두 더한 값 (이익률은 합계 손익÷합계 매출) */
+  const sumV={};items.forEach(it=>{sumV[it]=cols.reduce((a,c)=>a+(c.vals[it]||0),0);});
+  sumV['이익률(%)']=sumV['총 매출']>0?+(sumV['당월 손익']/sumV['총 매출']*100).toFixed(1):0;
   const groupRows=new Set(['총 매출','총 비용','매출원가','당월 손익','이익률(%)']);
   const f0=v=>Math.round(v).toLocaleString('ko-KR');
   function cell(item,i){
@@ -858,8 +911,8 @@ async function renderCompare(){
   el.innerHTML=`
     <div style="font-size:12px;color:#86868b;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span>전월 대비 증감율 · <span class="chg up big" style="font-size:11px;">▲ 30%+</span> 크게 튀는 항목 · <b>▲/▼ 10%+</b> 굵게 표시 — 튀는 숫자를 먼저 점검하세요 · <b>단위: 원</b> (셀에 마우스를 올리면 전월 → 이번달 금액)</span><button class="btn sm" onclick="resetCmpW()">↺ 열 너비 초기화</button></div>
     <div class="cmpwrap"><table class="cmp">
-      <tr><th>항목</th>${cols.map(c=>`<th class="amt">${c.label}</th>`).join('')}</tr>
-      ${items.map(item=>`<tr${groupRows.has(item)?' class="grp"':''}><td>${groupRows.has(item)?'<b>'+item+'</b>':'└ '+item}</td>${cols.map((c,i)=>cell(item,i)).join('')}</tr>`).join('')}
+      <tr><th>항목</th>${cols.map(c=>`<th class="amt">${c.label}</th>`).join('')}<th class="amt tot">합계</th></tr>
+      ${items.map(item=>`<tr${groupRows.has(item)?' class="grp"':''}><td>${groupRows.has(item)?'<b>'+item+'</b>':'└ '+item}</td>${cols.map((c,i)=>cell(item,i)).join('')}<td class="amt tot"><b>${item==='이익률(%)'?sumV[item].toFixed(1)+'%':f0(sumV[item])}</b></td></tr>`).join('')}
     </table></div>`;
   initCmpResize();
 }
@@ -960,6 +1013,13 @@ async function renderDash(){
       <div style="display:flex;justify-content:space-between;font-size:13px;"><span>잡이익<span style="font-weight:500;">${fmt(n(cur.잡이익))}</div>
     </div>`;
 
+  const 조정박스=(s.adjNet!==0||Object.keys(s.adj||{}).length)?`
+    <div class="jabiik-box" style="background:#f0f6ff;">
+      <div style="font-size:12px;font-weight:600;color:#0a84ff;margin-bottom:6px;">📒 회계 조정 (가결산 맞춤) <span style="font-weight:400;color:#86868b;">· 입력 탭 하단에서 수정</span></div>
+      ${[['상품매출원가 (기초+매입−기말)',-n(s.adj.상품원가)],['정부지원금 (판관비 차감)',n(s.adj.정부지원금)],['선급비용 조정',n(s.adj.선급비용)],['기타 조정',n(s.adj.기타조정)]].filter(x=>x[1]!==0).map(x=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${x[0]}</span><span style="font-weight:500;color:${x[1]>=0?'#30d158':'#ff453a'}">${x[1]>=0?'+':''}${fmt(x[1])}</span></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding-top:4px;border-top:1px solid #dbe7ff;margin-top:4px;"><b>손익 반영 합계</b><b style="color:${s.adjNet>=0?'#30d158':'#ff453a'}">${s.adjNet>=0?'+':''}${fmt(s.adjNet)}</b></div>
+    </div>`:'';
+
   const 미반영박스=Object.keys(details.미반영).length>0?`
     <div class="not-reflected">
       <div style="font-size:12px;font-weight:600;color:#ff453a;margin-bottom:6px;">🚫 손익 미반영 항목 (P&L 비용 제외) <span style="font-weight:400;color:#86868b;">· 항목 클릭 시 상세</span></div>
@@ -1034,6 +1094,7 @@ async function renderDash(){
       </table>
     </div>
     ${잡이익박스}
+    ${조정박스}
     <div class="panel">
       <div class="panel-title">📤 비용 내역</div>
       <table>
@@ -1085,6 +1146,20 @@ function loadIntoForm(year,month){
   showTab('input');
 }
 
+const ADJ_FIELDS=[['상품기초재고','a-상품기초재고'],['상품기말재고','a-상품기말재고'],['정부지원금','a-정부지원금'],['선급비용','a-선급비용'],['기타조정','a-기타조정']];
+function fillAdjForm(year,month){
+  const a=ADJ[year+'-'+month]||{};
+  ADJ_FIELDS.forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=(k in a)?(+a[k]).toLocaleString('ko-KR'):'';});
+}
+async function saveAdj(){
+  const year=+document.getElementById('yr').value,month=+document.getElementById('mo').value;
+  const rows=[];
+  ADJ_FIELDS.forEach(([k,id])=>{const el=document.getElementById(id);if(!el||el.value.trim()==='')return;const v=rawNum(el);rows.push({year,month,일자:'',거래처:'',품명:'[회계조정] '+k,공급가액:v,부가세:0,합계:v,차변계정:k,대변계정:'',파일종류:'조정',손익미반영:false});});
+  await sb.from('transactions').delete().eq('year',year).eq('month',month).eq('파일종류','조정');
+  if(rows.length){const {error}=await sb.from('transactions').insert(rows);if(error){alert('저장 실패: '+error.message);return;}}
+  await loadAll();
+  alert(year+'년 '+month+'월 회계 조정 '+rows.length+'건 저장 완료! ✅');
+}
 async function syncInputForm(){
   const year=+document.getElementById('yr').value;
   const month=+document.getElementById('mo').value;
@@ -1095,6 +1170,7 @@ async function syncInputForm(){
   } else {
     clearForm();
   }
+  fillAdjForm(year,month);
   // 당기매입은 저장된 값이 아니라 항상 실시간 계산 (표시용, disabled)
   const {totals}=await getTxTotals(year,month);
   _curTxTotals=totals;
