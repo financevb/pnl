@@ -264,6 +264,7 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
           <div class="ig"><label>정부지원금 (판관비 차감 · 손익 +)</label><input type="text" inputmode="numeric" id="a-정부지원금" placeholder="비움" oninput="formatNumberInput(this)"></div>
           <div class="ig"><label>선급비용 증가분 (비용 차감 · 손익 +, 감소면 −)</label><input type="text" inputmode="numeric" id="a-선급비용" placeholder="비움" oninput="formatNumberInput(this)"></div>
           <div class="ig"><label>기타 조정 (손익 ±)</label><input type="text" inputmode="numeric" id="a-기타조정" placeholder="비움" oninput="formatNumberInput(this)"></div>
+          <div class="ig"><label>제품매출 조정 (회계법인 제품매출과 맞춤 · 매출에 +)</label><input type="text" inputmode="numeric" id="a-제품매출조정" placeholder="비움" oninput="formatNumberInput(this)"></div>
         </div>
       </div>
       <div class="btn-row"><button class="btn" onclick="saveAdj()">📒 회계 조정만 저장</button></div>
@@ -446,11 +447,13 @@ function calcCost(d, txTotals, txRevenue){
   // 직매입 상품매출 입력값(유팡·락앤락·아이코닉스·고퀄)은 VAT 포함 금액이라 ÷1.1 해서 공급가액으로 집계 (위하고·매출장 상품매출 = 공급가액)
   let 상품매출수기=브랜드입력있음?(n(d.유팡)+n(d.락앤락)+n(d.아이코닉스)+n(d.고퀄))/1.1:0;
   if(!브랜드입력있음&&n(d.상품매출)>0)상품매출수기=n(d.상품매출);
-  // 브랜드팀 매출시트 = (PB매출합계 - 쿠팡로켓PB매출 - 맘가이드PB매출) / 1.1 (부가세 제외)
+  // 브랜드팀 매출시트 = (PB매출합계 - 쿠팡로켓PB매출) / 1.1 (부가세 제외). 쿠팡로켓은 매출세금계산서로 따로 잡히므로 제외, 맘가이드(인포그린)는 회계법인이 건별로 제품매출에 포함하므로 제외하지 않음
   const PB매출sum=n(d['PB매출sum']),쿠팡로켓PB매출=n(d.쿠팡로켓PB매출),맘가이드PB매출=n(d.맘가이드PB매출);
   const PB원시입력있음=PB매출sum!==0||쿠팡로켓PB매출!==0||맘가이드PB매출!==0;
-  let 제품매출수기=PB원시입력있음?(PB매출sum-쿠팡로켓PB매출-맘가이드PB매출)/1.1:0;
+  let 제품매출수기=PB원시입력있음?(PB매출sum-쿠팡로켓PB매출)/1.1:0;
   if(!PB원시입력있음&&n(d.제품매출)>0)제품매출수기=n(d.제품매출); // 마이그레이션 전 데이터 폴백
+  const adjRow=(typeof ADJ!=='undefined'&&ADJ[d.year+'-'+d.month])||{};
+  제품매출수기+=n(adjRow.제품매출조정); // 회계 조정: 회계법인 제품매출과 맞춤 (매출에 가산)
   const revBreak={
     상품매출:{수기:상품매출수기,tx:n(txRev['상품매출'])},
     제품매출:{수기:제품매출수기,tx:n(txRev['제품매출'])},
@@ -463,7 +466,6 @@ function calcCost(d, txTotals, txRevenue){
   const 기타tx=Object.keys(txRev).reduce((s,k)=>s+(REVENUE_FIELDS.includes(k)?0:n(txRev[k])),0);
   revBreak.기타매출={수기:0,tx:기타tx};
   const rev=Object.values(revBreak).reduce((s,v)=>s+v.수기+v.tx,0);
-  const adjRow=(typeof ADJ!=='undefined'&&ADJ[d.year+'-'+d.month])||{};
   const adjNet=-n(adjRow.상품원가)+n(adjRow.정부지원금)+n(adjRow.선급비용)+n(adjRow.기타조정);
   const profit=rev-cost-비용반영금액+adjNet;
   return{rev,cost,매출원가,비용반영금액,profit,급여계,사대보험계,신용카드계,커머스계,tx,revBreak,당기매입계산,adj:adjRow,adjNet};
@@ -875,7 +877,7 @@ async function renderCompare(){
     return {label:r.year+'.'+r.month+'월',vals:{
       '총 매출':s.rev,'상품매출':rv('상품매출'),'제품매출':rv('제품매출'),'수수료매출':rv('수수료매출'),'광고매출':rv('광고매출'),'이자/외화수익':rv('이자수익')+rv('외화수익'),'기타매출':rv('기타매출'),'잡이익':n(r.잡이익),
       '총 비용':s.cost,'급여':s.급여계,'4대보험':s.사대보험계,'신용카드수수료':s.신용카드계,'커머스마케팅비':s.커머스계,'PG수수료':b.totals.pg,'운반비':b.totals.운반비,'매입세금계산서':b.totals.매입세금계산서,'매입계산서':b.totals.매입계산서,'외화이체':n(r.외화이체),'기타지출':n(r.기타지출),
-      '매출원가':s.매출원가,'(조정)상품매출원가':n(s.adj.상품원가),'(조정)정부지원금 차감':n(s.adj.정부지원금),'(조정)선급비용·기타':n(s.adj.선급비용)+n(s.adj.기타조정),'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
+      '매출원가':s.매출원가,'(조정)상품매출원가':n(s.adj.상품원가),'(조정)정부지원금 차감':n(s.adj.정부지원금),'(조정)선급비용·기타':n(s.adj.선급비용)+n(s.adj.기타조정),'(조정)제품매출 보정':n(s.adj.제품매출조정),'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
     }};
   });
   let items=Object.keys(cols[0].vals);
@@ -1013,7 +1015,7 @@ async function renderDash(){
       <div style="display:flex;justify-content:space-between;font-size:13px;"><span>잡이익<span style="font-weight:500;">${fmt(n(cur.잡이익))}</div>
     </div>`;
 
-  const 조정박스=(s.adjNet!==0||Object.keys(s.adj||{}).length)?`
+  const 조정박스=(s.adjNet!==0)?`
     <div class="jabiik-box" style="background:#f0f6ff;">
       <div style="font-size:12px;font-weight:600;color:#0a84ff;margin-bottom:6px;">📒 회계 조정 (가결산 맞춤) <span style="font-weight:400;color:#86868b;">· 입력 탭 하단에서 수정</span></div>
       ${[['상품매출원가 (기초+매입−기말)',-n(s.adj.상품원가)],['정부지원금 (판관비 차감)',n(s.adj.정부지원금)],['선급비용 조정',n(s.adj.선급비용)],['기타 조정',n(s.adj.기타조정)]].filter(x=>x[1]!==0).map(x=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${x[0]}</span><span style="font-weight:500;color:${x[1]>=0?'#30d158':'#ff453a'}">${x[1]>=0?'+':''}${fmt(x[1])}</span></div>`).join('')}
@@ -1068,10 +1070,11 @@ async function renderDash(){
             if(!PB원시입력있음&&n(cur.제품매출)>0){
               sub+=`<tr class="sub-row"><td>└ 제품매출 (마이그레이션 전 데이터)</td><td class="amt">${fmt(n(cur.제품매출))}</td><td></td></tr>`;
             } else {
-              const 브랜드팀계산=(PB매출sum-쿠팡로켓-맘가이드)/1.1;
-              sub+=`<tr class="sub-row"><td>└ 브랜드팀 매출시트 (PB매출합계−쿠팡로켓−맘가이드)÷1.1</td><td class="amt">${fmt(브랜드팀계산)}</td><td></td></tr>`;
+              const 브랜드팀계산=(PB매출sum-쿠팡로켓)/1.1;
+              sub+=`<tr class="sub-row"><td>└ 브랜드팀 매출시트 (PB매출합계−쿠팡로켓)÷1.1 (맘가이드는 포함)</td><td class="amt">${fmt(브랜드팀계산)}</td><td></td></tr>`;
               sub+=`<tr class="sub-row" style="color:#aaa;"><td>&nbsp;&nbsp;&nbsp;PB매출 합계 ${fmt(PB매출sum)} / 쿠팡로켓 ${fmt(쿠팡로켓)} / 맘가이드 ${fmt(맘가이드)}</td><td></td><td></td></tr>`;
             }
+            if(n(s.adj.제품매출조정))sub+=`<tr class="sub-row"><td>└ 📒 회계 조정 (회계법인 제품매출과 맞춤)</td><td class="amt">${fmt(n(s.adj.제품매출조정))}</td><td></td></tr>`;
             if(b.tx>0)sub+=`<tr class="sub-row clk" onclick="openTxDetail('revtx','${_e(k)}')" title="클릭하면 상세 내역이 열려요"><td>└ 매출세금계산서</td><td class="amt">${fmt(b.tx)}</td><td></td></tr>`;
           } else if(b.tx>0){
             sub=`<tr class="sub-row"><td>└ 수기 입력</td><td class="amt">${fmt(b.수기)}</td><td></td></tr><tr class="sub-row clk" onclick="openTxDetail('revtx','${_e(k)}')" title="클릭하면 상세 내역이 열려요"><td>└ 매출세금계산서</td><td class="amt">${fmt(b.tx)}</td><td></td></tr>`;
@@ -1146,7 +1149,7 @@ function loadIntoForm(year,month){
   showTab('input');
 }
 
-const ADJ_FIELDS=[['상품기초재고','a-상품기초재고'],['상품기말재고','a-상품기말재고'],['정부지원금','a-정부지원금'],['선급비용','a-선급비용'],['기타조정','a-기타조정']];
+const ADJ_FIELDS=[['상품기초재고','a-상품기초재고'],['상품기말재고','a-상품기말재고'],['정부지원금','a-정부지원금'],['선급비용','a-선급비용'],['기타조정','a-기타조정'],['제품매출조정','a-제품매출조정']];
 function fillAdjForm(year,month){
   const a=ADJ[year+'-'+month]||{};
   ADJ_FIELDS.forEach(([k,id])=>{const el=document.getElementById(id);if(el)el.value=(k in a)?(+a[k]).toLocaleString('ko-KR'):'';});
