@@ -485,7 +485,7 @@ async function loadAll(){
     if(error)throw error;
     records=data||[];
     await loadAdj();
-    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261027-가결산비교`);
+    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261027-가결산비교2`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
     records=[];
@@ -945,7 +945,7 @@ async function renderGasan(){
   el.innerHTML=upload+`
     <div style="padding:12px 16px;border-radius:10px;background:#f5f5f7;margin-bottom:14px;font-size:13px;line-height:1.7;">
       <b>1~${GASAN.endMonth}월 누적 순이익</b> — 사이트 <b>${f0(siteProfit)}원</b> (${man(siteProfit)}) · 가결산 <b>${f0(gProfit)}원</b> (${man(gProfit)})<br>
-      차이 <b style="color:${profitDiff>=0?'#0071e3':'#ff453a'};">${profitDiff>0?'+':''}${f0(profitDiff)}원</b> (${profitDiff>=0?'사이트가 더 큼':'사이트가 더 작음 = 사이트 비용이 더 많음'})
+      <b style="color:${profitDiff>=0?'#0071e3':'#ff453a'};">사이트 이익이 가결산보다 ${f0(Math.abs(profitDiff))}원(${man(Math.abs(profitDiff))}) ${profitDiff>=0?'많아요':'적어요'}</b><br><span style="color:#86868b;">${profitDiff>=0?'→ 사이트에서 비용이 그만큼 덜 잡혔다는 뜻이에요':'→ 사이트에서 비용이 그만큼 더 많이 잡혔다는 뜻이에요 (매출은 거의 같아요)'}</span>
     </div>
     <div class="cmpwrap"><table class="cmp">
       <tr><th>항목</th><th class="amt">사이트</th><th class="amt">가결산</th><th class="amt">차이 (사이트−가결산)</th></tr>
