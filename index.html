@@ -214,7 +214,7 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
         </div>
       </div>
 
-      <div class="sh">💳 신용카드 수수료 (수기)</div>
+      <div class="sh">💳 신용카드대금 (수기 · 법인카드 사용액)</div>
       <div class="grid2">
         <div>
           <div class="ig"><label>신한카드</label><input type="text" inputmode="numeric" id="f-신용카드신한" placeholder="0" oninput="formatNumberInput(this)"></div>
@@ -783,7 +783,7 @@ async function openTxDetail(kind,keyEnc){
   </table>`:'<div class="empty">해당 내역이 없어요.</div>';
   showDtl(`${year}.${month}월 · ${titleMap[kind]||''}${key?' · '+key:''}`,body);
 }
-const MANUAL_GROUPS={'급여':['상용직급여','외주인건비','퇴직급여'],'4대보험':['국민연금','건강장기','고용보험','산재보험'],'신용카드수수료':['신용카드신한','신용카드비씨','신용카드삼성','신용카드우리'],'커머스마케팅비':['상품금액할인','장바구니할인','적립금사용'],'외화이체':['외화이체'],'기타지출':['기타지출'],'잡이익':['잡이익']};
+const MANUAL_GROUPS={'급여':['상용직급여','외주인건비','퇴직급여'],'4대보험':['국민연금','건강장기','고용보험','산재보험'],'신용카드대금':['신용카드신한','신용카드비씨','신용카드삼성','신용카드우리'],'커머스마케팅비':['상품금액할인','장바구니할인','적립금사용'],'외화이체':['외화이체'],'기타지출':['기타지출'],'잡이익':['잡이익']};
 const MANUAL_LABELS={상용직급여:'상용직급여',외주인건비:'외주인건비',퇴직급여:'퇴직급여',국민연금:'국민연금',건강장기:'건강+장기',고용보험:'고용보험',산재보험:'산재보험',신용카드신한:'신한',신용카드비씨:'비씨',신용카드삼성:'삼성',신용카드우리:'우리',상품금액할인:'상품금액할인',장바구니할인:'장바구니할인',적립금사용:'적립금사용',외화이체:'외화이체',기타지출:'기타지출',잡이익:'잡이익'};
 function openManualDtl(group){
   const cur=records.find(r=>dashView&&r.year===dashView.year&&r.month===dashView.month);if(!cur)return;
@@ -876,7 +876,7 @@ async function renderCompare(){
     const rv=k2=>s.revBreak[k2].수기+s.revBreak[k2].tx;
     return {label:r.year+'.'+r.month+'월',vals:{
       '총 매출':s.rev,'상품매출':rv('상품매출'),'제품매출':rv('제품매출'),'수수료매출':rv('수수료매출'),'광고매출':rv('광고매출'),'이자/외화수익':rv('이자수익')+rv('외화수익'),'기타매출':rv('기타매출'),'잡이익':n(r.잡이익),
-      '총 비용':s.cost,'급여':s.급여계,'4대보험':s.사대보험계,'신용카드수수료':s.신용카드계,'커머스마케팅비':s.커머스계,'PG수수료':b.totals.pg,'운반비':b.totals.운반비,'매입세금계산서':b.totals.매입세금계산서,'매입계산서':b.totals.매입계산서,'외화이체':n(r.외화이체),'기타지출':n(r.기타지출),
+      '총 비용':s.cost,'급여':s.급여계,'4대보험':s.사대보험계,'신용카드대금':s.신용카드계,'커머스마케팅비':s.커머스계,'PG수수료':b.totals.pg,'운반비':b.totals.운반비,'매입세금계산서':b.totals.매입세금계산서,'매입계산서':b.totals.매입계산서,'외화이체':n(r.외화이체),'기타지출':n(r.기타지출),
       '매출원가':s.매출원가,'(조정)상품매출원가':n(s.adj.상품원가),'(조정)정부지원금 차감':n(s.adj.정부지원금),'(조정)선급비용·기타':n(s.adj.선급비용)+n(s.adj.기타조정),'(조정)제품매출 보정':n(s.adj.제품매출조정),'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
     }};
   });
@@ -999,7 +999,7 @@ async function renderDash(){
   const costRows=[
     mainRow('급여',s.급여계,subRows(급여그룹),`openManualDtl('급여')`),
     mainRow('4대보험',s.사대보험계,subRows(사대그룹),`openManualDtl('4대보험')`),
-    mainRow('신용카드수수료',s.신용카드계,subRows(신카그룹),`openManualDtl('신용카드수수료')`),
+    mainRow('신용카드대금',s.신용카드계,subRows(신카그룹),`openManualDtl('신용카드대금')`),
     mainRow('커머스마케팅비',s.커머스계,subRows(커머그룹),`openManualDtl('커머스마케팅비')`),
     totals.pg>0?mainRow('PG수수료',totals.pg,subRows(details.pg,k=>`openTxDetail('pg','${_e(k)}')`),`openTxDetail('pg','')`):'',
     totals.운반비>0?mainRow('운반비',totals.운반비,'',`openTxDetail('운반비','')`):'',
