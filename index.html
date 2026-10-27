@@ -1157,7 +1157,7 @@ function fillAdjForm(year,month){
 async function saveAdj(){
   const year=+document.getElementById('yr').value,month=+document.getElementById('mo').value;
   const rows=[];
-  ADJ_FIELDS.forEach(([k,id])=>{const el=document.getElementById(id);if(!el||el.value.trim()==='')return;const v=rawNum(el);rows.push({year,month,일자:'',거래처:'',품명:'[회계조정] '+k,공급가액:v,부가세:0,합계:v,차변계정:k,대변계정:'',파일종류:'조정',손익미반영:false});});
+  ADJ_FIELDS.forEach(([k,id])=>{const el=document.getElementById(id);if(!el||el.value.trim()==='')return;const v=rawNum(el);rows.push({year,month,일자:'',거래처:'',품명:'[회계조정] '+k,공급가액:v,부가세:0,합계:v,차변계정:k,대변계정:'',파일종류:'조정',손익미반영:true});}); /* 예전 버전 화면이 조정 행을 비용으로 잘못 더하지 않도록 손익미반영 표시 */
   await sb.from('transactions').delete().eq('year',year).eq('month',month).eq('파일종류','조정');
   if(rows.length){const {error}=await sb.from('transactions').insert(rows);if(error){alert('저장 실패: '+error.message);return;}}
   await loadAll();
