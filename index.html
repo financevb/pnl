@@ -147,6 +147,7 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
 <div class="tabs">
   <div class="tab active" onclick="showTab('dashboard')">현황</div>
   <div class="tab" onclick="showTab('compare')">📈 월 비교</div>
+  <div class="tab" onclick="showTab('gasan')">🧾 가결산 비교</div>
   <div class="tab" onclick="showTab('input')">입력</div>
   <div class="tab" onclick="showTab('upload')">📎 위하고 업로드</div>
   <div class="tab" onclick="showTab('txlist')">거래내역</div>
@@ -161,6 +162,7 @@ tr.clk{cursor:pointer;}tr.clk:hover td{background:#f0f7ff;}
   <div class="section" id="compare"><div class="loading">데이터 불러오는 중...</div></div>
 
   <!-- 입력 -->
+  <div class="section" id="gasan"><div class="empty">불러오는 중...</div></div>
   <div class="section" id="input">
     <div class="form-card">
       <div class="form-title">월결산 데이터 입력</div>
@@ -483,7 +485,7 @@ async function loadAll(){
     if(error)throw error;
     records=data||[];
     await loadAdj();
-    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261026-합계열`);
+    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261027-가결산비교`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
     records=[];
@@ -738,13 +740,14 @@ async function loadTx(){
 }
 
 function showTab(t){
-  const tabs=['dashboard','compare','input','upload','txlist','history'];
+  const tabs=['dashboard','compare','gasan','input','upload','txlist','history'];
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',tabs[i]===t));
   document.querySelectorAll('.section').forEach(el=>el.classList.remove('active'));
   document.getElementById(t).classList.add('active');
   document.querySelector('.content').classList.toggle('wide',t==='compare');
   if(t==='dashboard')renderDash();
   if(t==='compare')renderCompare();
+  if(t==='gasan')renderGasan();
   if(t==='input')syncInputForm();
   if(t==='history')renderHist();
   if(t==='txlist')loadTx();
@@ -851,10 +854,7 @@ async function syncJabTotal(){
   renderDash();
 }
 /* ===== 월 비교 (전월 대비 증감) ===== */
-async function renderCompare(){
-  const el=document.getElementById('compare');
-  if(!records.length){el.innerHTML='<div class="empty">저장된 데이터가 없어요.</div>';return;}
-  el.innerHTML='<div class="loading">월별 데이터 계산 중...</div>';
+async function getCompareCols(){
   const all=await fetchAll(()=>sb.from('transactions').select('파일종류,차변계정,공급가액,손익미반영,year,month').order('id'));
   const byM={};
   all.forEach(r=>{
@@ -880,6 +880,95 @@ async function renderCompare(){
       '매출원가':s.매출원가,'(조정)상품매출원가':n(s.adj.상품원가),'(조정)정부지원금 차감':n(s.adj.정부지원금),'(조정)선급비용·기타':n(s.adj.선급비용)+n(s.adj.기타조정),'(조정)제품매출 보정':n(s.adj.제품매출조정),'당월 손익':s.profit,'이익률(%)':s.rev>0?+(s.profit/s.rev*100).toFixed(1):0,
     }};
   });
+  return cols;
+}
+/* ===== 가결산(위하고 재무제표) 비교 ===== */
+let GASAN=null;
+try{GASAN=JSON.parse(localStorage.getItem('pnl_gasan')||'null');}catch(e){GASAN=null;}
+function gNorm(t){return String(t||'').replace(/\s+/g,'').replace(/^[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\./,'');}
+function parseGasan(file){
+  if(!file)return;
+  const fr=new FileReader();
+  fr.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets['손익계산서'];
+      if(!ws){alert('「손익계산서」 시트가 없는 파일이에요. 위하고에서 받은 재무제표 엑셀인지 확인해주세요.');return;}
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      const lines=[];let endMonth=12,gotEnd=false;
+      rows.forEach(r=>{
+        const txt=r.filter(v=>v!=='').join(' ');
+        const m=txt.match(/(\d{4})년\s*1월\s*1일부터\s*(\d{4})년\s*(\d{1,2})월/);
+        if(m&&!gotEnd){endMonth=+m[3];gotEnd=true;}
+        const label=r.find(v=>typeof v==='string'&&v.trim()!=='');
+        const num=r.find(v=>typeof v==='number');
+        if(label&&num!==undefined)lines.push({k:gNorm(label),v:num});
+      });
+      GASAN={name:file.name,endMonth,lines};
+      try{localStorage.setItem('pnl_gasan',JSON.stringify(GASAN));}catch(e2){}
+      renderGasan();
+    }catch(err){alert('파일을 읽지 못했어요: '+err.message);}
+  };
+  fr.readAsArrayBuffer(file);
+}
+function clearGasan(){GASAN=null;try{localStorage.removeItem('pnl_gasan');}catch(e){}renderGasan();}
+async function renderGasan(){
+  const el=document.getElementById('gasan');
+  const upload=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+    <button class="btn primary sm" onclick="document.getElementById('gasan-file').click()">📂 가결산 재무제표 엑셀 올리기</button>
+    <input type="file" id="gasan-file" accept=".xls,.xlsx" style="display:none" onchange="parseGasan(this.files[0])">
+    ${GASAN?`<span style="font-size:12px;color:#86868b;">${GASAN.name} · 1~${GASAN.endMonth}월 · 이 브라우저에만 저장돼요</span><button class="btn sm" onclick="clearGasan()">지우기</button>`:''}
+  </div>`;
+  if(!GASAN){el.innerHTML=upload+'<div class="empty">위하고에서 받은 <b>재무제표(가결산) 엑셀</b>을 올리면, 이 사이트 1~N월 누적과 항목별로 비교해 줘요.<br>파일은 서버로 보내지 않고 이 브라우저 안에서만 읽어요.</div>';return;}
+  if(!records.length){el.innerHTML=upload+'<div class="empty">저장된 데이터가 없어요.</div>';return;}
+  el.innerHTML=upload+'<div class="loading">계산 중...</div>';
+  const all=await getCompareCols();
+  const cols=all.filter(c=>+c.label.split('.')[1].replace('월','')<=GASAN.endMonth);
+  const S=k=>cols.reduce((a,c)=>a+(c.vals[k]||0),0);
+  const G=k=>{const x=GASAN.lines.find(l=>l.k===k);return x?x.v:0;};
+  const siteRev=S('총 매출');
+  const rows4=[['상품매출',G('상품매출')],['제품매출',G('제품매출')],['수수료매출',G('수수료매출')],['광고매출',G('광고매출')]];
+  const siteOther=siteRev-rows4.reduce((a,r)=>a+S(r[0]),0);
+  const gOther=G('영업외수익');
+  const gCost=G('매출원가')+G('판매비와관리비')+G('영업외비용');
+  const siteProfit=S('당월 손익'),siteCost=siteRev-siteProfit;
+  const gProfit=G('당기순이익');
+  const f0=v=>Math.round(v).toLocaleString('ko-KR');
+  const diffCell=d=>{const a=Math.abs(d);const c=a<1000?'#86868b':(d>0?'#0071e3':'#ff453a');return `<td class="amt" style="color:${c};font-weight:${a>=1e7?700:400};">${a<1000?'0':(d>0?'+':'')+f0(d)}</td>`;};
+  const line=(label,sv,gv,bold)=>`<tr${bold?' class="grp"':''}><td>${bold?'<b>'+label+'</b>':'└ '+label}</td><td class="amt">${f0(sv)}</td><td class="amt">${f0(gv)}</td>${diffCell(sv-gv)}</tr>`;
+  const man=v=>(v/1e8).toFixed(2)+'억';
+  const profitDiff=siteProfit-gProfit;
+  const skip=['매출액','상품매출','수수료매출','광고매출','제품매출','매출원가','매출총이익','판매비와관리비','영업이익','영업외수익','영업외비용','법인세차감전이익','법인세등','당기순이익'];
+  const seg=(a,b)=>{const i=GASAN.lines.findIndex(l=>l.k===a),j=GASAN.lines.findIndex(l=>l.k===b);return i<0||j<0?[]:GASAN.lines.slice(i+1,j).filter(l=>l.v);};
+  const costDtl=seg('매출원가','매출총이익'),admDtl=seg('판매비와관리비','영업이익'),nonDtl=seg('영업외비용','법인세차감전이익');
+  const dtl=(t,tot,a)=>`<tr class="grp"><td><b>${t}</b></td><td class="amt"><b>${f0(tot)}</b></td></tr>`+a.map(l=>`<tr><td>└ ${l.k}</td><td class="amt">${f0(l.v)}</td></tr>`).join('');
+  el.innerHTML=upload+`
+    <div style="padding:12px 16px;border-radius:10px;background:#f5f5f7;margin-bottom:14px;font-size:13px;line-height:1.7;">
+      <b>1~${GASAN.endMonth}월 누적 순이익</b> — 사이트 <b>${f0(siteProfit)}원</b> (${man(siteProfit)}) · 가결산 <b>${f0(gProfit)}원</b> (${man(gProfit)})<br>
+      차이 <b style="color:${profitDiff>=0?'#0071e3':'#ff453a'};">${profitDiff>0?'+':''}${f0(profitDiff)}원</b> (${profitDiff>=0?'사이트가 더 큼':'사이트가 더 작음 = 사이트 비용이 더 많음'})
+    </div>
+    <div class="cmpwrap"><table class="cmp">
+      <tr><th>항목</th><th class="amt">사이트</th><th class="amt">가결산</th><th class="amt">차이 (사이트−가결산)</th></tr>
+      ${line('총 수익',siteRev,G('매출액')+gOther,true)}
+      ${rows4.map(r=>line(r[0],S(r[0]),r[1])).join('')}
+      ${line('그 외 수익 (사이트: 이자·외화·기타 / 가결산: 영업외수익)',siteOther,gOther)}
+      ${line('총 비용 (매출원가+판관비+영업외비용)',siteCost,gCost,true)}
+      ${line('순이익',siteProfit,gProfit,true)}
+    </table></div>
+    <div style="font-size:12px;color:#86868b;margin:10px 0 18px;">사이트 비용 = 총 수익 − 순이익으로 역산한 값이에요. 사이트는 매출원가·판관비를 계정별로 나누지 않아서 비용 항목별 비교는 아래 가결산 내역을 참고하세요. 단위: 원</div>
+    <div style="font-weight:600;margin:6px 0;">가결산 비용 내역 (참고)</div>
+    <div class="cmpwrap"><table class="cmp">
+      <tr><th>항목</th><th class="amt">금액</th></tr>
+      ${dtl('매출원가',G('매출원가'),costDtl)}
+      ${dtl('판매비와관리비',G('판매비와관리비'),admDtl)}
+      ${dtl('영업외비용',G('영업외비용'),nonDtl)}
+    </table></div>`;
+}
+async function renderCompare(){
+  const el=document.getElementById('compare');
+  if(!records.length){el.innerHTML='<div class="empty">저장된 데이터가 없어요.</div>';return;}
+  el.innerHTML='<div class="loading">월별 데이터 계산 중...</div>';
+  const cols=await getCompareCols();
   let items=Object.keys(cols[0].vals);
   if(cols.every(c=>!c.vals['기타매출']))items=items.filter(i=>i!=='기타매출'); /* 전월 전부 0이면 행 숨김 */
   items=items.filter(i=>!i.startsWith('(조정)')||cols.some(c=>c.vals[i])); /* 조정 입력이 없으면 행 숨김 */
