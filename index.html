@@ -485,7 +485,7 @@ async function loadAll(){
     if(error)throw error;
     records=data||[];
     await loadAdj();
-    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261111-맘가이드제외`);
+    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261111-대여금`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
     records=[];
@@ -500,7 +500,7 @@ async function getTxTotals(year,month){
   const details={pg:{},운반비:{},매입세금계산서:{},매입계산서:{},미반영:{}};
   const revenue={}; // 매출세금계산서 대변계정별 합계 (공급가액) — 비용 계산과 완전히 분리
   rows.forEach(r=>{
-    if(r.파일종류==='잡이익'||r.파일종류==='조정')return; // 잡이익 상세·회계조정은 비용/매출 거래 집계에서 제외
+    if(r.파일종류==='잡이익'||r.파일종류==='조정'||r.파일종류==='대여금')return; // 잡이익 상세·회계조정은 비용/매출 거래 집계에서 제외
     // 매출세금계산서는 매출 데이터이므로 비용 계산에서 제외하고, 별도로 매출 합계에만 반영
     if(r.파일종류==='매출세금계산서'){
       const acct=r.차변계정;
@@ -718,7 +718,7 @@ async function loadTx(){
   const data=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('파일종류').order('차변계정').order('id'));
   if(!data||!data.length){el.innerHTML='<div class="empty">해당 월의 거래내역이 없어요.</div>';return;}
   const byFile={};
-  data.forEach(r=>{if(!byFile[r.파일종류])byFile[r.파일종류]=[];byFile[r.파일종류].push(r);});
+  data.filter(r=>r.파일종류!=='대여금').forEach(r=>{if(!byFile[r.파일종류])byFile[r.파일종류]=[];byFile[r.파일종류].push(r);});
   el.innerHTML=Object.entries(byFile).map(([ftype,rows])=>{
     const byAcct={};
     rows.forEach(r=>{
@@ -769,7 +769,7 @@ async function openTxDetail(kind,keyEnc){
   showDtl(`${year}.${month}월 상세`,'<div class="loading">불러오는 중...</div>');
   const all=await fetchAll(()=>sb.from('transactions').select('*').eq('year',year).eq('month',month).order('id'));
   const rows=all.filter(r=>{
-    if(r.파일종류==='잡이익'||r.파일종류==='조정')return false;
+    if(r.파일종류==='잡이익'||r.파일종류==='조정'||r.파일종류==='대여금')return false;
     if(r.파일종류==='매출세금계산서')return kind==='revtx'&&(!key||r.차변계정===key);
     if(r.손익미반영)return kind==='미반영'&&(!key||r.차변계정===key);
     if(r.차변계정==='(판)PG수수료[자동분류]')return kind==='pg'&&(!key||r.거래처===key);
@@ -858,7 +858,7 @@ async function getCompareCols(){
   const all=await fetchAll(()=>sb.from('transactions').select('파일종류,차변계정,공급가액,손익미반영,year,month').order('id'));
   const byM={};
   all.forEach(r=>{
-    if(r.파일종류==='잡이익'||r.파일종류==='조정')return;
+    if(r.파일종류==='잡이익'||r.파일종류==='조정'||r.파일종류==='대여금')return;
     const k=r.year+'-'+r.month;
     const b=byM[k]=byM[k]||{totals:{pg:0,운반비:0,매입세금계산서:0,매입계산서:0,당기매입:0},revenue:{}};
     if(r.파일종류==='매출세금계산서'){b.revenue[r.차변계정]=(b.revenue[r.차변계정]||0)+n(r.공급가액);return;}
@@ -1208,8 +1208,54 @@ async function renderDash(){
       </table>
     </div>
     ${cur.memo?`<div class="panel"><div class="panel-title">📝 메모</div><div style="padding:14px 18px;font-size:13px;">${cur.memo}</div></div>`:''}
+    <div id="loan-box"></div>
   `;
+  renderLoans();
 }
+/* ===== 💰 직원 대여금 (손익 미반영 · 참고용) =====
+   transactions 에 파일종류='대여금', year=0·month=0(월 조회에 안 걸림), 손익미반영=true 로 저장
+   거래처=이름, 일자=빌려준 날(YYYY-MM-DD), 공급가액=빌려준 금액, 대변계정=돌려받은 금액(숫자 문자열), 품명=메모 */
+let LOANS=[],loanEdit=null;
+const escL=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+async function renderLoans(){
+  const box=document.getElementById('loan-box');if(!box)return;
+  try{LOANS=await fetchAll(()=>sb.from('transactions').select('*').eq('파일종류','대여금').order('일자').order('id'));}catch(e){LOANS=[];}
+  let tot=0,rep=0;
+  const rows=LOANS.map(r=>{const a=n(r.공급가액),b=n(r.대변계정);tot+=a;rep+=b;return`<tr><td>${escL(r.거래처)}</td><td>${escL(r.일자)}</td><td class="amt">${fmt(a)}</td><td class="amt">${fmt(b)}</td><td class="amt"><b>${fmt(a-b)}</b></td><td style="font-size:12px;">${escL(r.품명)}</td><td style="white-space:nowrap;"><button class="btn sm" onclick="loanStartEdit('${r.id}')">수정</button> <button class="btn sm" onclick="loanDel('${r.id}')">삭제</button></td></tr>`;}).join('');
+  const e=loanEdit?LOANS.find(x=>String(x.id)===String(loanEdit)):null;
+  const iv=(id,v,ph,w,t)=>`<input id="${id}" type="${t||'text'}" value="${escL(v)}" placeholder="${ph}" style="width:${w};padding:7px 8px;border:1px solid #d2d2d7;border-radius:8px;font-size:13px;"${t?'':' inputmode="text"'}>`;
+  box.innerHTML=`<div class="panel"><div class="panel-title">💰 직원 대여금 <span style="font-weight:400;color:#86868b;font-size:12px;">— 손익(P&L)에는 반영 안 됨 · 참고용 메모</span></div>
+  <div style="padding:12px 18px;">
+  ${LOANS.length?`<table><tr><th>이름</th><th>빌려준 날</th><th class="amt">빌려준 금액</th><th class="amt">돌려받은 금액</th><th class="amt">남은 금액</th><th>메모</th><th></th></tr>${rows}
+  <tr class="total-row"><td>합계</td><td></td><td class="amt">${fmt(tot)}</td><td class="amt">${fmt(rep)}</td><td class="amt">${fmt(tot-rep)}</td><td></td><td></td></tr></table>`:'<div style="color:#86868b;font-size:13px;margin-bottom:8px;">아직 적힌 대여금이 없어요.</div>'}
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px;">
+    ${iv('ln-name',e?e.거래처:'','이름','90px')}
+    ${iv('ln-date',e?e.일자:'','빌려준 날','140px','date')}
+    <input id="ln-amt" inputmode="numeric" value="${e?fmt(n(e.공급가액)):''}" placeholder="빌려준 금액" oninput="formatNumberInput(this)" style="width:120px;padding:7px 8px;border:1px solid #d2d2d7;border-radius:8px;font-size:13px;">
+    <input id="ln-rep" inputmode="numeric" value="${e&&n(e.대변계정)?fmt(n(e.대변계정)):''}" placeholder="돌려받은 금액" oninput="formatNumberInput(this)" style="width:120px;padding:7px 8px;border:1px solid #d2d2d7;border-radius:8px;font-size:13px;">
+    ${iv('ln-memo',e?e.품명:'','메모 (상환 조건 등)','200px')}
+    <button class="btn primary sm" onclick="loanSave()">${e?'수정 저장':'추가'}</button>
+    ${e?'<button class="btn sm" onclick="loanEdit=null;renderLoans()">취소</button>':''}
+  </div></div></div>`;
+}
+function loanStartEdit(id){loanEdit=id;renderLoans();}
+async function loanSave(){
+  const g=id=>document.getElementById(id);
+  const name=g('ln-name').value.trim(),date=g('ln-date').value,amt=rawNum(g('ln-amt')),rep=rawNum(g('ln-rep'))||0,memo=g('ln-memo').value.trim();
+  if(!name||!amt){alert('이름과 빌려준 금액은 꼭 적어주세요.');return;}
+  const row={year:0,month:0,파일종류:'대여금',일자:date||'',거래처:name,품명:memo,공급가액:amt,부가세:0,합계:amt,차변계정:'주임종단기대여금',대변계정:String(rep),손익미반영:true};
+  const q=loanEdit?sb.from('transactions').update(row).eq('id',loanEdit):sb.from('transactions').insert(row);
+  const {error}=await q;if(error){alert('저장 실패: '+error.message);return;}
+  loanEdit=null;renderLoans();
+}
+async function loanDel(id){
+  const r=LOANS.find(x=>String(x.id)===String(id));
+  if(!confirm((r?r.거래처+' ':'')+'대여금 기록을 지울까요?'))return;
+  const {error}=await sb.from('transactions').delete().eq('id',id);
+  if(error){alert('삭제 실패: '+error.message);return;}
+  renderLoans();
+}
+
 
 async function renderHist(){
   const el=document.getElementById('hist-content');
