@@ -449,10 +449,10 @@ function calcCost(d, txTotals, txRevenue){
   // 직매입 상품매출 입력값(유팡·락앤락·아이코닉스·고퀄)은 VAT 포함 금액이라 ÷1.1 해서 공급가액으로 집계 (위하고·매출장 상품매출 = 공급가액)
   let 상품매출수기=브랜드입력있음?(n(d.유팡)+n(d.락앤락)+n(d.아이코닉스)+n(d.고퀄))/1.1:0;
   if(!브랜드입력있음&&n(d.상품매출)>0)상품매출수기=n(d.상품매출);
-  // 브랜드팀 매출시트 = (PB매출합계 - 쿠팡로켓PB매출) / 1.1 (부가세 제외). 쿠팡로켓은 매출세금계산서로 따로 잡히므로 제외, 맘가이드(인포그린)는 회계법인이 건별로 제품매출에 포함하므로 제외하지 않음
+  // 브랜드팀 매출시트 = (PB매출합계 - 쿠팡로켓PB매출 - 맘가이드PB매출) / 1.1 (부가세 제외). 쿠팡로켓·맘가이드(인포그린) 제외 — 2026-11-11 사용자 확정
   const PB매출sum=n(d['PB매출sum']),쿠팡로켓PB매출=n(d.쿠팡로켓PB매출),맘가이드PB매출=n(d.맘가이드PB매출);
   const PB원시입력있음=PB매출sum!==0||쿠팡로켓PB매출!==0||맘가이드PB매출!==0;
-  let 제품매출수기=PB원시입력있음?(PB매출sum-쿠팡로켓PB매출)/1.1:0;
+  let 제품매출수기=PB원시입력있음?(PB매출sum-쿠팡로켓PB매출-맘가이드PB매출)/1.1:0;
   if(!PB원시입력있음&&n(d.제품매출)>0)제품매출수기=n(d.제품매출); // 마이그레이션 전 데이터 폴백
   const adjRow=(typeof ADJ!=='undefined'&&ADJ[d.year+'-'+d.month])||{};
   제품매출수기+=n(adjRow.제품매출조정); // 회계 조정: 회계법인 제품매출과 맞춤 (매출에 가산)
@@ -485,7 +485,7 @@ async function loadAll(){
     if(error)throw error;
     records=data||[];
     await loadAdj();
-    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261027-가결산비교2`);
+    setStatus(true,`연결됨 · ${records.length}개월 저장됨 · 화면버전 20261111-맘가이드제외`);
   }catch(e){
     setStatus(false,'연결 실패: '+e.message);
     records=[];
@@ -1159,8 +1159,8 @@ async function renderDash(){
             if(!PB원시입력있음&&n(cur.제품매출)>0){
               sub+=`<tr class="sub-row"><td>└ 제품매출 (마이그레이션 전 데이터)</td><td class="amt">${fmt(n(cur.제품매출))}</td><td></td></tr>`;
             } else {
-              const 브랜드팀계산=(PB매출sum-쿠팡로켓)/1.1;
-              sub+=`<tr class="sub-row"><td>└ 브랜드팀 매출시트 (PB매출합계−쿠팡로켓)÷1.1 (맘가이드는 포함)</td><td class="amt">${fmt(브랜드팀계산)}</td><td></td></tr>`;
+              const 브랜드팀계산=(PB매출sum-쿠팡로켓-맘가이드)/1.1;
+              sub+=`<tr class="sub-row"><td>└ 브랜드팀 매출시트 (PB매출합계−쿠팡로켓−맘가이드)÷1.1</td><td class="amt">${fmt(브랜드팀계산)}</td><td></td></tr>`;
               sub+=`<tr class="sub-row" style="color:#aaa;"><td>&nbsp;&nbsp;&nbsp;PB매출 합계 ${fmt(PB매출sum)} / 쿠팡로켓 ${fmt(쿠팡로켓)} / 맘가이드 ${fmt(맘가이드)}</td><td></td><td></td></tr>`;
             }
             if(n(s.adj.제품매출조정))sub+=`<tr class="sub-row"><td>└ 📒 회계 조정 (회계법인 제품매출과 맞춤)</td><td class="amt">${fmt(n(s.adj.제품매출조정))}</td><td></td></tr>`;
